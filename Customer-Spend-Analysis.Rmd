@@ -1,0 +1,488 @@
+---
+title: "DAMO 520 – Assignment 2"
+date: "`r format(Sys.Date(), '%B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    number_sections: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_knit$set(root.dir = "/Users/essieneffiomessien/Documents/R CLASS")
+```
+
+# Part A: Model Selection & Regression Analysis
+
+## Step 1: Exploratory Data Analysis
+
+### Load Packages and Data
+
+```{r load-packages}
+install.packages(c("readxl","ggplot2","corrplot","dplyr","tidyr",
+                   "psych","gridExtra","scales","car","lmtest"))
+
+library(readxl)
+library(ggplot2)
+library(corrplot)
+library(dplyr)
+library(tidyr)
+library(psych)
+library(scales)
+library(gridExtra)
+library(car)
+library(lmtest)
+```
+
+```{r load-data}
+df <- read_excel("DAMO_520-Assignment 2.xlsx")
+
+str(df)
+summary(df)
+head(df)
+colSums(is.na(df))
+colnames(df)
+```
+
+### Variable Selection
+
+```{r variable-selection}
+dependent_var    <- "PurchaseAmount"
+independent_vars <- c("Income", "SatisfactionScore", "EmailOpens",
+                      "TimeOnSite", "WebsiteVisits")
+
+df_sub <- df[, c(dependent_var, independent_vars)]
+
+describe(df_sub)
+```
+
+`PurchaseAmount` was selected as the dependent variable because it is a continuous, unbounded dollar measure (range: \$7.23–\$167.11) that directly quantifies customer spending behaviour — the core outcome of interest in a marketing analytics context.
+
+Five independent variables were selected based on theoretical relevance and confirmed against the data:
+
+- **Income** (r = 0.583): highest bivariate correlation with PurchaseAmount; customers with greater financial capacity are expected to spend more.
+- **WebsiteVisits** (r = 0.294): moderate positive correlation; repeat visits signal sustained purchase intent.
+- **SatisfactionScore** (r = −0.008): near-zero bivariate correlation, but retained to test whether satisfaction has a conditional effect on spending once financial capacity is controlled.
+- **EmailOpens** (r = 0.004): near-zero correlation; retained to evaluate whether email engagement has any incremental predictive value in a multivariate context.
+- **TimeOnSite** (r = 0.005): near-zero correlation; retained to test whether browsing duration contributes to spending beyond visit frequency alone.
+
+---
+
+### Outlier Detection
+
+```{r outlier-detection}
+detect_outliers <- function(x, varname) {
+  Q1      <- quantile(x, 0.25)
+  Q3      <- quantile(x, 0.75)
+  IQR_val <- Q3 - Q1
+  lower   <- Q1 - 1.5 * IQR_val
+  upper   <- Q3 + 1.5 * IQR_val
+  n_out   <- sum(x < lower | x > upper)
+  cat(sprintf("%-20s | IQR=%.2f | Fences=[%.2f, %.2f] | Outliers: %d (%.1f%%)\n",
+              varname, IQR_val, lower, upper, n_out, 100 * n_out / length(x)))
+}
+
+detect_outliers(df$PurchaseAmount,    "PurchaseAmount")
+detect_outliers(df$Income,            "Income")
+detect_outliers(df$SatisfactionScore, "SatisfactionScore")
+detect_outliers(df$EmailOpens,        "EmailOpens")
+detect_outliers(df$TimeOnSite,        "TimeOnSite")
+detect_outliers(df$WebsiteVisits,     "WebsiteVisits")
+```
+
+The IQR fence method confirms that PurchaseAmount contains very few outliers (0.5%), which are not large enough to influence model estimates., validating its suitability as an OLS dependent variable. Any flagged outliers in the predictor variables are minor (< 1% of n = 5,000) and will not meaningfully distort coefficient estimates at this sample size.
+
+---
+
+### Figure 1: Correlation Matrix
+
+```{r correlation-matrix, fig.width=8, fig.height=7}
+cor_matrix <- round(cor(df_sub), 3)
+
+corrplot(
+  cor_matrix,
+  method      = "color",
+  type        = "full",
+  order       = "original",
+  addCoef.col = "black",
+  number.cex  = 0.82,
+  tl.col      = "#1a1410",
+  tl.srt      = 40,
+  tl.cex      = 0.9,
+  col         = colorRampPalette(c("#d73027", "#f7f7f7", "#4575b4"))(200),
+  title       = "Figure 1: Correlation Matrix – Selected Variables",
+  mar         = c(0, 0, 2, 0)
+)
+```
+
+**Interpretation:** Income is the strongest predictor of PurchaseAmount (r = 0.583), followed by WebsiteVisits (r = 0.294). SatisfactionScore, EmailOpens, and TimeOnSite all show near-zero correlations (|r| < 0.01), indicating no meaningful linear relationship with spending. All inter-predictor correlations are negligible, confirming no multicollinearity concerns.
+
+**Justification:** The near-zero inter-predictor correlations (all |r| < 0.05) confirm that the five independent variables are essentially orthogonal to one another. This satisfies the no-multicollinearity assumption of OLS regression and means coefficient estimates will be stable and uniquely attributable to each predictor. The strong Income–PurchaseAmount correlation (r = 0.583) and moderate WebsiteVisits correlation (r = 0.294) provide empirical grounds for expecting a meaningful OLS model fit. The flat correlations for the remaining three variables do not disqualify them — multivariate regression may reveal conditional effects not visible at the bivariate level.
+
+---
+
+### Figure 2: Scatterplots
+
+```{r scatterplots, fig.width=12, fig.height=10}
+sp1 <- ggplot(df, aes(x = Income, y = PurchaseAmount)) +
+  geom_point(alpha = 0.2, size = 0.6, color = "steelblue") +
+  geom_smooth(method = "lm", color = "red", linewidth = 1.2, se = TRUE) +
+  labs(title    = "Income vs PurchaseAmount",
+       subtitle = "r = 0.583 | Strong, consistent linear trend",
+       x = "Annual Income ($)", y = "Purchase Amount ($)") +
+  theme_minimal()
+
+sp2 <- ggplot(df, aes(x = SatisfactionScore, y = PurchaseAmount)) +
+  geom_point(alpha = 0.2, size = 0.6, color = "seagreen") +
+  geom_smooth(method = "lm", color = "red", linewidth = 1.2, se = TRUE) +
+  labs(title    = "SatisfactionScore vs PurchaseAmount",
+       subtitle = "r = -0.008 | Near-zero relationship; flat regression line",
+       x = "Satisfaction Score (1-5)", y = "Purchase Amount ($)") +
+  theme_minimal()
+
+sp3 <- ggplot(df, aes(x = EmailOpens, y = PurchaseAmount)) +
+  geom_point(alpha = 0.2, size = 0.6, color = "mediumpurple") +
+  geom_smooth(method = "lm", color = "red", linewidth = 1.2, se = TRUE) +
+  labs(title    = "EmailOpens vs PurchaseAmount",
+       subtitle = "r = 0.004 | Near-zero relationship; retained for model comparison",
+       x = "Email Opens", y = "Purchase Amount ($)") +
+  theme_minimal()
+
+sp4 <- ggplot(df, aes(x = TimeOnSite, y = PurchaseAmount)) +
+  geom_point(alpha = 0.2, size = 0.6, color = "tomato") +
+  geom_smooth(method = "lm", color = "red", linewidth = 1.2, se = TRUE) +
+  labs(title    = "TimeOnSite vs PurchaseAmount",
+       subtitle = "r = 0.005 | Near-zero relationship; flat regression line",
+       x = "Time On Site (mins)", y = "Purchase Amount ($)") +
+  theme_minimal()
+
+sp5 <- ggplot(df, aes(x = WebsiteVisits, y = PurchaseAmount)) +
+  geom_point(alpha = 0.2, size = 0.6, color = "darkorange") +
+  geom_smooth(method = "lm", color = "red", linewidth = 1.2, se = TRUE) +
+  labs(title    = "WebsiteVisits vs PurchaseAmount",
+       subtitle = "r = 0.294 | Positive linear trend, wider scatter",
+       x = "Website Visit Count", y = "Purchase Amount ($)") +
+  theme_minimal()
+
+grid.arrange(sp1, sp2, sp3, sp4, sp5, nrow = 3,
+             top = "Figure 2: Scatterplots – Independent Variables vs Purchase Amount")
+```
+
+**Interpretation:** Income shows a clear, consistent upward linear trend with PurchaseAmount, while WebsiteVisits displays a weaker but positive relationship with wider scatter. SatisfactionScore, EmailOpens, and TimeOnSite all produce flat regression lines, confirming their near-zero correlations reflect a genuinely absent directional pattern in the data. All relationships appear linear with no evidence of curvature, supporting the use of OLS regression.
+
+**Justification:** All five scatterplots show linear — not curved or threshold-shaped — relationships between each predictor and PurchaseAmount. This confirms that no polynomial terms or non-linear transformations are needed, and that a linear additive OLS model is an appropriate functional form for this data. The consistent spread of residuals around each regression line provides preliminary visual evidence of homoscedasticity. The flat lines for SatisfactionScore, EmailOpens, and TimeOnSite confirm these variables carry no suppressed non-linear signal that a linear model would miss.
+
+---
+
+### Figure 3: Boxplots
+
+```{r boxplots, fig.width=14, fig.height=5}
+df_box <- df_sub %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Value") %>%
+  mutate(Variable = factor(Variable,
+           levels = c("PurchaseAmount","Income","SatisfactionScore",
+                      "EmailOpens","TimeOnSite","WebsiteVisits"),
+           labels = c("Purchase\nAmount ($)","Income ($)","Satisfaction\nScore",
+                      "Email\nOpens","Time On\nSite (min)","Website\nVisits")))
+
+ggplot(df_box, aes(x = Variable, y = Value, fill = Variable)) +
+  geom_boxplot(outlier.size = 0.5, outlier.alpha = 0.3, width = 0.5,
+               colour = "#1a1410", linewidth = 0.6) +
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3, colour = "#c9922a") +
+  facet_wrap(~Variable, scales = "free", nrow = 1) +
+  labs(title    = "Figure 3: Boxplots – Distribution of Key Variables",
+       subtitle = "Orange diamond = mean | Box = IQR | Whiskers = 1.5 x IQR",
+       x = NULL, y = "Value") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x     = element_blank(),
+        axis.ticks.x    = element_blank())
+```
+
+**Interpretation:** PurchaseAmount is symmetric and tightly distributed (IQR: \$75–\$104) with no extreme outliers, supporting the normality assumption required for OLS. SatisfactionScore shows a near-uniform spread across its full 1–5 range, consistent with its inability to predict spending. Means and medians are closely aligned across all variables, confirming the absence of meaningful skew.
+
+**Justification:** The symmetry and absence of extreme outliers in PurchaseAmount directly supports its suitability as an OLS dependent variable — heavily skewed or outlier-driven distributions would require transformation or robust regression. The well-behaved distributions of Income, TimeOnSite, and WebsiteVisits indicate these predictors can enter the model in their raw form without transformation. SatisfactionScore's flat, uniform-like distribution explains its near-zero correlation: with all satisfaction levels equally represented, no level is associated with systematically higher spending.
+
+---
+
+### Figure 4: Density Plots
+
+```{r density-plots, fig.width=12, fig.height=8}
+df_dens <- df_sub %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Value") %>%
+  mutate(Variable = factor(Variable,
+           levels = c("PurchaseAmount","Income","SatisfactionScore",
+                      "EmailOpens","TimeOnSite","WebsiteVisits"),
+           labels = c("Purchase Amount ($)","Income ($)","Satisfaction Score",
+                      "Email Opens","Time On Site (min)","Website Visits")))
+
+df_stats <- df_dens %>%
+  group_by(Variable) %>%
+  summarise(Mean   = mean(Value),
+            Median = median(Value),
+            Skew   = round((mean(Value) - median(Value)) / sd(Value) * 3, 3),
+            .groups = "drop")
+
+ggplot(df_dens, aes(x = Value, fill = Variable, colour = Variable)) +
+  geom_density(alpha = 0.35, linewidth = 0.9) +
+  geom_vline(data = df_stats, aes(xintercept = Mean),
+             linetype = "dashed", colour = "#1a1410", linewidth = 0.8) +
+  geom_vline(data = df_stats, aes(xintercept = Median),
+             linetype = "dotted", colour = "#b03030", linewidth = 0.8) +
+  geom_text(data = df_stats,
+            aes(x = Inf, y = Inf, label = paste0("Skew: ", sprintf("%.3f", Skew))),
+            hjust = 1.1, vjust = 1.4, size = 3.3,
+            colour = "#3d3530", inherit.aes = FALSE) +
+  facet_wrap(~Variable, scales = "free", nrow = 2) +
+  labs(title    = "Figure 4: Density Plots – Variable Distributions",
+       subtitle = "Black dashed = mean  |  Red dotted = median",
+       x = "Value", y = "Density") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+**Interpretation:** PurchaseAmount (skew = 0.055) is near-perfectly normal with mean and median almost identical — no transformation of the dependent variable is needed. Income (skew = 0.008) is essentially symmetric. SatisfactionScore (skew = −0.057) shows a flat, uniform-like distribution that explains its near-zero correlation. EmailOpens (skew = −0.468) displays a mild left-skewed bimodal shape. TimeOnSite (skew = 0.018) and WebsiteVisits (skew = 0.031) are approximately normal with no transformation needed.
+
+**Justification:** The near-normal density of PurchaseAmount directly satisfies the OLS assumption that residuals are normally distributed. This confirms OLS is appropriate and alternatives such as log-linear or generalised linear models are not required. The uniform shapes of SatisfactionScore and EmailOpens do not violate any OLS assumption — there is no requirement that predictors be normally distributed, only that residuals are.
+
+---
+
+### Regression Type Justification
+
+Based on all four visualisations, **Ordinary Least Squares (OLS) multiple linear regression** is the appropriate model:
+
+1. **Continuous outcome**: PurchaseAmount (\$7.23–\$167.11) is not binary, ordinal, or a count — ruling out logistic, ordinal, and Poisson regression.
+2. **Normal distribution**: Density plot shows a clean bell curve (skew = 0.055); Shapiro-Wilk W = 0.9979, p = 0.7846.
+3. **Linear relationships**: All five scatterplots show straight regression lines — no polynomial terms needed.
+4. **No multicollinearity**: All inter-predictor correlations |r| < 0.05 and all VIFs ≈ 1.0.
+5. **No extreme outliers**: Boxplots show no influential outliers that would bias OLS estimates.
+
+---
+
+## Step 2: Model Development
+
+### Model 1: Baseline — Single Predictor (Income)
+
+**Model Equation:** $\text{PurchaseAmount} = \beta_0 + \beta_1(\text{Income}) + \varepsilon$
+
+```{r model1}
+model1 <- lm(PurchaseAmount ~ Income, data = df_sub)
+summary(model1)
+confint(model1)
+```
+
+**Model Equation:**
+
+$$\widehat{\text{PurchaseAmount}} = 45.43 + 0.000494 \cdot \text{Income}$$
+**Interpretation:**
+
+- **Sign:** The coefficient on Income is positive (+0.000494), confirming that higher income is associated with higher spending — in the expected direction.
+- **Magnitude:** For every \$1 increase in annual income, PurchaseAmount increases by \$0.000494 on average. A customer earning \$10,000 more per year is predicted to spend \$4.94 more per transaction. Across the income range (\$30,000–\$178,602), this produces an approximately \$73 spend differential between the lowest and highest earners.
+- **Marketing meaning:** Income is the single strongest driver of purchase value. High-income segments should be prioritised for premium product promotions and upselling campaigns.
+- **Model fit:** R² = 0.3399 — Income alone explains 34% of variation in PurchaseAmount. This is the benchmark Models 2 and 3 must improve on.
+
+---
+
+### Model 2: Multiple Regression — All Predictors
+
+
+```{r model2}
+model2 <- lm(PurchaseAmount ~ Income + SatisfactionScore + EmailOpens +
+               TimeOnSite + WebsiteVisits, data = df_sub)
+summary(model2)
+confint(model2)
+vif(model2)
+```
+**Model Equation:**
+
+$$\widehat{\text{PurchaseAmount}} = 26.14 + 0.000492 \cdot \text{Income} - 0.035 \cdot \text{SatisfactionScore} - 0.006 \cdot \text{EmailOpens} + 0.022 \cdot \text{TimeOnSite} + 1.951 \cdot \text{WebsiteVisits}$$
+
+**Interpretation:**
+
+- **Income** (+0.000492, p < 0.001): positive and highly significant. Every \$1 increase in income raises predicted spend by \$0.000492, consistent with Model 1 and stable after controlling for all other predictors.
+- **WebsiteVisits** (+1.951, p < 0.001): positive and highly significant. Each additional visit is associated with \$1.95 more in purchase amount, reflecting loyalty and repeat purchase behaviour.
+- **SatisfactionScore** (−0.035, p = 0.863): non-significant; 95% CI [−0.428, 0.359] spans zero — no reliable effect on spending.
+- **EmailOpens** (−0.006, p = 0.822): effectively zero effect; CI [−0.058, 0.046] confirms email engagement does not drive purchase value.
+- **TimeOnSite** (+0.022, p = 0.850): non-significant; CI [−0.206, 0.251] confirms browsing duration has no meaningful effect.
+- **Marketing meaning:** Only income and visit frequency reliably predict spending. Email campaigns and satisfaction initiatives do not appear to drive higher transaction values.
+- **Model fit:** Adj R² = 0.4226 — improved from 34% to 42.3%. AIC = 42,106.92 vs Model 1 AIC = 42,772.86.
+
+---
+
+### Model 3: Improved Model — Interaction Term (Income × WebsiteVisits)
+
+
+
+Only the two significant predictors from Model 2 are retained (Income and WebsiteVisits), removing the three non-significant variables to produce a cleaner, more parsimonious specification.
+
+```{r model3}
+model3 <- lm(PurchaseAmount ~ Income * WebsiteVisits, data = df_sub)
+summary(model3)
+confint(model3)
+```
+
+```{r model-comparison}
+cat("MODEL COMPARISON \n")
+cat(sprintf("Model 1 - R2: %.4f | Adj R2: %.4f | AIC: %.2f\n",
+            summary(model1)$r.squared, summary(model1)$adj.r.squared, AIC(model1)))
+cat(sprintf("Model 2 - R2: %.4f | Adj R2: %.4f | AIC: %.2f\n",
+            summary(model2)$r.squared, summary(model2)$adj.r.squared, AIC(model2)))
+cat(sprintf("Model 3 - R2: %.4f | Adj R2: %.4f | AIC: %.2f\n",
+            summary(model3)$r.squared, summary(model3)$adj.r.squared, AIC(model3)))
+```
+**Model Equation:**
+
+$$\widehat{\text{PurchaseAmount}} = 28.74 + 0.000462 \cdot \text{Income} + 1.683 \cdot \text{WebsiteVisits} + 0.000003 \cdot (\text{Income} \times \text{WebsiteVisits})$$
+**Interpretation:**
+
+- **Income** (+0.000462, p < 0.001): positive and significant. When WebsiteVisits = 0, each \$1 increase in income raises spend by \$0.000462.
+- **WebsiteVisits** (+1.683, p < 0.001): positive and significant. Each additional visit adds \$1.68 in predicted spend.
+- **Income:WebsiteVisits** (+0.000003, p = 0.287): positive but **non-significant**. The 95% CI [−0.0000025, 0.0000085] spans zero — the effect of income on spending does not significantly change with visit frequency. The two predictors operate additively, not interactively.
+- **Marketing meaning:** High-income customers spend more regardless of visit frequency, and frequent visitors spend more regardless of income. Marketing strategies for income and visit frequency can be run independently.
+- **Model fit:** Adj R² = 0.4229, AIC = 42,101.90 — marginally better than Model 2. The non-significant interaction suggests a reduced Income + WebsiteVisits model is the most parsimonious specification.
+- **VIF note:** Model 3 produces high VIFs (Income = 10.57, WebsiteVisits = 12.96, interaction = 22.72) due to structural multicollinearity inherent in interaction models — not a data quality issue. Mean-centring resolves this (see Diagnostic 4 below).
+
+---
+
+# Part B: Diagnostic Testing
+
+## Diagnostic 1: Linearity
+
+```{r linearity-resid, fig.width=7, fig.height=5}
+plot(model3, which = 1,
+     main = "Figure 5: Residuals vs Fitted - Model 3",
+     sub  = "A random scatter around zero confirms linearity")
+```
+
+```{r linearity-resid2, fig.width=7, fig.height=5}
+plot(model2, which = 1,
+     main = "Figure 6: Residuals vs Fitted - Model 2",
+     sub  = "A random scatter around zero confirms linearity")
+```
+
+```{r crplots, fig.width=10, fig.height=5}
+crPlots(model3, main = "Figure 7: Component + Residual Plots - Model 3")
+```
+
+**Interpretation:** Both Residuals vs Fitted plots show points randomly scattered around the horizontal zero line with a flat red line — no systematic curve or funnel. Component+residual plots confirm each predictor has a linear partial relationship with PurchaseAmount.
+
+**Justification:** The absence of systematic pattern confirms the linear specification in Model 3 is appropriate. If curvature were detected, a quadratic term (e.g., `I(Income^2)`) would need to be added. Ignoring non-linearity inflates residuals and produces biased coefficient estimates.
+
+---
+
+## Diagnostic 2: Normality of Residuals
+
+```{r qq-model3, fig.width=7, fig.height=5}
+plot(model3, which = 2,
+     main = "Figure 8: Normal Q-Q Plot - Model 3",
+     sub  = "Points following the diagonal line confirm normal residuals")
+```
+
+```{r qq-model2, fig.width=7, fig.height=5}
+plot(model2, which = 2,
+     main = "Figure 9: Normal Q-Q Plot - Model 2",
+     sub  = "Points following the diagonal line confirm normal residuals")
+```
+
+```{r shapiro-wilk}
+set.seed(42)
+resid_sample <- sample(residuals(model3), 500)
+sw_resid <- shapiro.test(resid_sample)
+cat(sprintf("Shapiro-Wilk: W = %.4f   p-value = %.4f\n",
+            sw_resid$statistic, sw_resid$p.value))
+```
+
+**Interpretation:** The Shapiro-Wilk test (W = 0.9979, p = 0.7846) indicates that we fail to reject the null hypothesis of normality. The Q-Q plot further supports this conclusion, as the residuals closely follow the diagonal reference line with only minimal deviations at the tails. This confirms that the residuals are approximately normally distributed.
+
+**Justification:** Since the p-value (0.7846) is substantially greater than 0.05, there is no statistical evidence of non-normality. This validates the reliability of hypothesis tests, p-values, and confidence intervals derived from the regression model. If strong deviations from normality were observed, transformations such as (`log(PurchaseAmount) ~...`) or robust regression methods would be considered
+
+---
+
+## Diagnostic 3: Homoscedasticity
+
+```{r breusch-pagan}
+bp_test <- bptest(model3)
+cat("BREUSCH-PAGAN TEST - Model 3\n")
+print(bp_test)
+```
+```{r scale-location, fig.width=7, fig.height=5}
+plot(model3, which = 3,
+     main = "Figure 10: Scale-Location Plot - Model 3",
+     sub  = "A flat red line confirms constant variance (homoscedasticity)")
+```
+
+**Interpretation:** The Breusch-Pagan test (BP = 0.833, p = 0.8415) indicates that we fail to reject the null hypothesis of homoscedasticity. This suggests that the variance of residuals is constant across levels of the fitted values. The Scale-Location plot supports this finding, as the red trend line is flat and the residuals are evenly spread.
+
+**Justification:** Since the p-value is substantially greater than 0.05, there is no evidence of heteroscedasticity. Therefore, the assumption of constant variance is satisfied and OLS estimates remain efficient. If heteroscedasticity had been detected, heteroscedasticity-consistent (robust) standard errors would have been applied.
+
+---
+
+## Diagnostic 4: Multicollinearity
+
+```{r vif}
+cat("VIF - Model 2 (all five predictors)\n")
+vif(model2)
+
+cat("\nVIF - Model 3 (Income x WebsiteVisits interaction)\n")
+vif(model3)
+```
+
+**Interpretation:** For Model 2, all VIF values are approximately 1, indicating no multicollinearity among predictors. In Model 3, VIF values are substantially higher due to the inclusion of the interaction term (Income × WebsiteVisits), which introduces structural multicollinearity.
+
+**Justification:** The elevated VIF values in Model 3 are not due to problematic relationships in the data, but rather arise mechanically from the interaction term. This explains the increase in the standard error for Income. After mean-centering the predictors, VIF values return to approximately 1, confirming that multicollinearity has been effectively mitigated.
+
+```{r mean-centering}
+df_sub$Income_c  <- scale(df_sub$Income,scale = FALSE)
+df_sub$WebsiteVisits_c <- scale(df_sub$WebsiteVisits, scale = FALSE)
+model3_c <- lm(PurchaseAmount ~ Income_c * WebsiteVisits_c, data = df_sub)
+summary(model3_c)
+vif(model3_c)
+```
+
+---
+
+## Diagnostic 5: Influential Observations
+
+```{r cooks-distance, fig.width=9, fig.height=5}
+plot(model3, which = 4,
+     main = "Figure 11: Cook's Distance - Model 3",
+     sub  = "Observations above the red threshold line are potentially influential")
+abline(h = 4 / nrow(df_sub), col = "red", lty = 2, lwd = 1.5)
+legend("topright", legend = paste0("Threshold: 4/n = ", round(4 / nrow(df_sub), 4)),
+       col = "red", lty = 2, cex = 0.85)
+```
+
+```{r cooks-summary}
+cooksd    <- cooks.distance(model3)
+threshold <- 4 / nrow(df_sub)
+cat(sprintf("Threshold (4/n):%.5f\n",  threshold))
+cat(sprintf("Max Cook's Distance: %.6f\n",  max(cooksd)))
+cat(sprintf("Observations above threshold: %d (%.1f%%)\n",
+            sum(cooksd > threshold), 100 * mean(cooksd > threshold)))
+```
+
+**Interpretation:** The Cook’s Distance threshold (4/n) is 0.00080. While 249 observations (5.0%) exceed this threshold, the maximum Cook’s Distance (0.0116) is far below the commonly used cutoff of 0.5, indicating that no single observation exerts undue influence on the model.
+
+**Justification:** Although 5% of observations exceed the 4/n threshold, this is a conservative cutoff at n = 5,000 and the maximum Cook's D of 0.0116 is negligible. No observations need to be removed. If Cook's D had exceeded 0.5, robust regression via `rlm()` from the MASS package would have been applied.
+
+---
+
+## Diagnostic Summary
+
+```{r diagnostic-summary}
+cat("DIAGNOSTIC SUMMARY - Model \n")
+cat(sprintf("Shapiro-Wilk (residuals): W = %.4f  p = %.4f\n",
+            sw_resid$statistic, sw_resid$p.value))
+cat(sprintf("Breusch-Pagan:            BP = %.4f  p = %.4f\n",
+            bp_test$statistic, bp_test$p.value))
+cat(sprintf("Influential obs (>4/n):   %d of %d (%.1f%%)\n",
+            sum(cooksd > threshold), nrow(df_sub),
+            100 * mean(cooksd > threshold)))
+cat("VIF Model 2: all = 1.0 (no multicollinearity)\n")
+cat("VIF Model 3: high due to structural interaction - resolved by mean-centring\n")
+```
