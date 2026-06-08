@@ -1,104 +1,61 @@
-# Customer Spending Analysis (Regression Model)
+# DAMO 520 – Marketing Analytics Regression Project
 
-## 📌 Project Overview
-This project analyzes customer purchasing behavior using multiple regression models. The goal is to identify the key factors that drive **Purchase Amount** and translate statistical findings into meaningful business and marketing insights.
-
-The analysis is based on a dataset of 5,000 customers, focusing on how **income and engagement metrics** influence spending.
+![R](https://img.shields.io/badge/Language-R-276DC3?style=flat&logo=r&logoColor=white)
+![RMarkdown](https://img.shields.io/badge/Report-RMarkdown-blue?style=flat)
+![Status](https://img.shields.io/badge/Status-Complete-brightgreen?style=flat)
 
 ---
 
-## 🎯 Objectives
-- Identify the most important predictors of customer spending
-- Compare multiple regression models
-- Evaluate model assumptions and performance
-- Translate results into actionable marketing strategies
+## 📌 Overview
+
+This project applies multiple regression analysis to a marketing dataset of **5,000 customer records** to identify the key drivers of purchase amount.
+
+The analysis combines **exploratory data analysis, model development, diagnostic testing, and business insights**, following the DAMO 520 assignment structure.
 
 ---
 
 ## 📊 Dataset
-The dataset contains 5,000 customer observations with variables including:
-- Income
-- WebsiteVisits
-- SatisfactionScore
-- EmailOpens
-- TimeOnSite
-- PurchaseAmount (target variable)
+
+| Property | Detail |
+|---|---|
+| Observations | 5,000 |
+| Variables | 15 |
+| Target Variable | `PurchaseAmount` ($7.23 – $167.11) |
+| Source | DAMO 520 Course Dataset |
+
+### Key Variables
+
+- **Income** — strongest predictor of spending  
+- **WebsiteVisits** — engagement driver  
+- SatisfactionScore, EmailOpens, TimeOnSite — tested but not significant  
 
 ---
 
 ## ⚙️ Methodology
-1. **Exploratory Data Analysis (EDA)**
-   - Correlation analysis
-   - Scatterplots, boxplots, and density plots
-   - Outlier detection
 
-2. **Model Development**
-   - Model 1: Income only (baseline)
-   - Model 2: Full model (all predictors)
-   - Model 3: Interaction model (Income × WebsiteVisits)
+### 1. Exploratory Data Analysis
+- Correlation analysis and visualisation (`corrplot`)
+- Scatterplots with regression lines (`ggplot2`)
+- Boxplots and density plots
+- Outlier detection using IQR method
 
-3. **Model Evaluation**
-   - R², Adjusted R², and AIC comparison
-   - Statistical significance testing
+### 2. Model Development
 
-4. **Diagnostic Testing**
-   - Linearity (Residual plots)
-   - Normality (Q-Q plot, Shapiro-Wilk test)
-   - Homoscedasticity (Breusch-Pagan test)
-   - Multicollinearity (VIF)
-   - Influence (Cook’s Distance)
+| Model | Description | Adj R² | AIC |
+|---|---|---|---|
+| Model 1 | Income only | 0.3398 | 42,772.86 |
+| Model 2 | Full model (5 predictors) | 0.4226 | 42,106.92 |
+| Model 3 | Income × WebsiteVisits | 0.4229 | 42,101.90 |
 
 ---
 
-## 🔑 Key Findings
-- **Income is the strongest predictor** of customer spending
-- **WebsiteVisits significantly increases spending**
-- SatisfactionScore, EmailOpens, and TimeOnSite show **no meaningful impact**
-- Customer spending is driven by:
-  - Financial capacity
-  - Engagement frequency
+### 3. Diagnostic Testing
+
+- ✅ Linearity (Residual plots)  
+- ✅ Normality (Shapiro-Wilk test)  
+- ✅ Homoscedasticity (Breusch-Pagan test)  
+- ✅ Multicollinearity (VIF)  
+- ✅ Influential observations (Cook’s Distance)  
 
 ---
 
-## 💡 Business Insights
-- High-income customers spend significantly more → prioritize premium targeting
-- Increasing website visits directly improves revenue
-- Email engagement alone does **not** drive purchase value
-
----
-
-## 🚀 Recommendations
-- Segment customers based on income
-- Invest in strategies that increase repeat website visits
-- Shift email marketing focus from opens → site visits
-
----
-
-## ⚠️ Limitations
-- Model explains ~42% of variance in spending
-- Data may lack key variables (e.g., purchase history, product type)
-- Results are correlational, not causal
-
----
-
-## 🔮 Future Improvements
-- Add behavioral variables (RFM, customer tenure)
-- Test non-linear models (GAM)
-- Apply machine learning models (Random Forest, XGBoost)
-- Use cross-validation for stronger generalization
-
----
-
-## 🛠️ Tools & Libraries
-- R
-- readxl
-- ggplot2
-- dplyr
-- corrplot
-- car (VIF)
-- lmtest (Breusch-Pagan)
-
----
-
-## 📂 Project Structure# Customer-Spend-Analysis
-Data-driven regression analysis uncovering how income and website engagement influence customer spending
