@@ -1,4 +1,4 @@
-# DAMO 520 – Marketing Analytics Regression Project
+#  Marketing Analytics Regression Project
 
 ![R](https://img.shields.io/badge/Language-R-276DC3?style=flat&logo=r&logoColor=white)
 ![RMarkdown](https://img.shields.io/badge/Report-RMarkdown-blue?style=flat)
